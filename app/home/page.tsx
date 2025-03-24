@@ -17,7 +17,7 @@ const Navbar = () => {
     const [searchOpen, setSearchOpen] = useState(false);
     const [lastScrollY, setLastScrollY] = useState(0);
     const [navVisible, setNavVisible] = useState(true);
-    const searchInputRef = useRef(null);
+    const searchInputRef =  useRef<HTMLInputElement>(null);
   
     // Handle scroll effects - enhanced to hide on scroll down, show on scroll up
     useEffect(() => {
