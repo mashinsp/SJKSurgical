@@ -1,28 +1,41 @@
 // middleware.ts
 import { NextRequest, NextResponse } from 'next/server'
 
-// Database storage function (replace with your DB logic)
-async function storeVisitorData(data: {
-  ip: string
-  country: string
-  region: string
-  city: string
-  userAgent: string
-  url: string
-  timestamp: string
-}) {
+interface LocationData {
+  country?: string
+  region?: string
+  city?: string
+  timezone?: string
+  lat?: number
+  lon?: number
+  isp?: string
+}
+
+async function getLocationFromIP(ip: string): Promise<LocationData | null> {
   try {
-    // Example with fetch to your API endpoint
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/analytics`, {
-      method: 'POST',
+    // Using ip-api.com (free tier: 45 requests/minute)
+    const response = await fetch(`http://ip-api.com/json/${ip}?fields=country,regionName,city,timezone,lat,lon,isp`, {
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ANALYTICS_SECRET}`
-      },
-      body: JSON.stringify(data)
+        'User-Agent': 'NextJS-Middleware'
+      }
     })
+    
+    if (!response.ok) return null
+    
+    const data = await response.json()
+    
+    return {
+      country: data.country,
+      region: data.regionName,
+      city: data.city,
+      timezone: data.timezone,
+      lat: data.lat,
+      lon: data.lon,
+      isp: data.isp
+    }
   } catch (error) {
-    console.error('Failed to store visitor data:', error)
+    console.error('Error fetching location:', error)
+    return null
   }
 }
 
@@ -37,35 +50,32 @@ export async function middleware(request: NextRequest) {
             forwardedFor?.split(',')[0]?.trim() || 
             'Unknown IP'
 
-  // Get location from Vercel headers
-  const country = request.headers.get('x-vercel-ip-country') || 'Unknown'
-  const region = request.headers.get('x-vercel-ip-country-region') || 'Unknown'
-  const city = request.headers.get('x-vercel-ip-city') || 'Unknown'
-  const userAgent = request.headers.get('user-agent') || 'Unknown'
+  // Skip location lookup for localhost/development
+  if (ip === 'Unknown IP' || ip === '127.0.0.1' || ip === '::1') {
+    console.log('Local development - skipping location lookup')
+    return NextResponse.next()
+  }
 
-  const visitorData = {
+  // Get location data
+  const locationData = await getLocationFromIP(ip)
+  
+  // Log comprehensive visitor information
+  console.log(`Visitor Info:`, {
     ip,
-    country,
-    region,
-    city,
-    userAgent,
+    location: locationData,
+    userAgent: request.headers.get('user-agent'),
     url: request.url,
-    timestamp: new Date().toISOString()
-  }
+    method: request.method,
+    timestamp: new Date().toISOString(),
+    referer: request.headers.get('referer') || 'Direct'
+  })
 
-  // Log to console
-  console.log('Visitor:', visitorData)
-
-  // Store in database (non-blocking)
-  if (process.env.NODE_ENV === 'production') {
-    storeVisitorData(visitorData).catch(console.error)
-  }
+  // Optional: Store in database here
+  // await storeVisitorData({ ip, location: locationData, ... })
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
-  ],
+  matcher: '/:path*',
 }
